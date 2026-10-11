@@ -107,7 +107,7 @@ Copyright (c) 2025-2026 iobroker-community-adapters <iobroker-community-adapters
 Copyright (c) 2020-2024 bropat <patrick.broetto@gmail.com>
 
 The web pages in `www/` that go2rtc serves are taken from [go2rtc](https://github.com/AlexxIT/go2rtc),
-MIT licensed, Copyright (c) 2022 Alexey Khit. Their license text is in `www/LICENSE.go2rtc`, the list
+MIT licensed by Alexey Khit (2022). Their license text is in `www/LICENSE.go2rtc`, the list
 of files and what was changed is in `www/VENDOR.md`.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
