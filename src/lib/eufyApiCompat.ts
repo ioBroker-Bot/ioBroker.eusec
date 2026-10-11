@@ -103,6 +103,17 @@
  * Known limit: type 60 has no pan/tilt command and carries battery states the wired C31 lacks. A
  * type of its own needs a C31 on the bench.
  *
+ * The eufyCam C37 (T814X, type 10037, iobroker-community-adapters/ioBroker.eusec#198) is another
+ * one: a battery camera with solar panel, light and 360 degree pan and tilt that connects to a
+ * HomeBase. Of all known types, the eufyCam S4 (type 89, `CAMERA_S4`) maps the most of its params:
+ * the C37 reports a param for every S4 property except `enabled` (6250), and the library treats the
+ * S4 as a battery and an outdoor pan and tilt camera.
+ *
+ * Known limit: untested on a C37. Settings are sent the way the library sends them to an S4, which
+ * for detection types is the SoloCam S340 route (`isOutdoorPanAndTiltCamera()`). The C37 also gets
+ * the state for the second lens of the S4 (`dualCamWatchViewMode`). Its params for notification
+ * types (6027), motion detection type (1252) and auto night vision (1013) have no state.
+ *
  * ## 6. Kept P2P connection
  *
  * The library marks every device type with a battery as an energy saving device and closes its P2P
@@ -147,9 +158,16 @@ export const eufyClientOptions: Pick<EufySecurityConfig, 'enableEmbeddedPKCS1Sup
     enableEmbeddedPKCS1Support: true,
 };
 
+/** A known device type that serves an unknown one best, with the issue that tracks the unknown one. */
+interface DeviceTypeSubstitute {
+    type: DeviceType;
+    issue: number;
+}
+
 /** Device types the library does not know, mapped to the known type that serves them best. */
-const DEVICE_TYPE_SUBSTITUTES: Readonly<Record<number, DeviceType>> = {
-    10031: DeviceType.SOLO_CAMERA_SPOTLIGHT_1080, // eufyCam C31 (T817L), see #156
+const DEVICE_TYPE_SUBSTITUTES: Readonly<Record<number, DeviceTypeSubstitute>> = {
+    10031: { type: DeviceType.SOLO_CAMERA_SPOTLIGHT_1080, issue: 156 }, // eufyCam C31 (T817L)
+    10037: { type: DeviceType.CAMERA_S4, issue: 198 }, // eufyCam C37 (T814X)
 };
 
 /** An entry of a device or station list whose type was replaced, with the type it had before. */
@@ -174,7 +192,7 @@ export const substituteDeviceTypes = (list: unknown): SubstitutedEntry[] => {
         const substitute = typeof type === 'number' ? DEVICE_TYPE_SUBSTITUTES[type] : undefined;
         if (substitute !== undefined) {
             replaced.push({ type: type as number, entry });
-            entry.device_type = substitute;
+            entry.device_type = substitute.type;
         }
     }
     return replaced;
@@ -192,7 +210,7 @@ export const describeSubstitutedDevice = (substituted: SubstitutedEntry): string
     return (
         `Parameters of ${String(entry.device_name)} (type ${type}, model ${String(entry.device_model)}, ` +
         `firmware ${String(entry.main_sw_version)}, hardware ${String(entry.main_hw_version)}) - please post them ` +
-        `in #156 with serial numbers, IP addresses, WLAN names, keys and tokens replaced by xxx: ${JSON.stringify(
+        `in #${DEVICE_TYPE_SUBSTITUTES[type].issue} with serial numbers, IP addresses, WLAN names, keys and tokens replaced by xxx: ${JSON.stringify(
             entry.params,
         )}`
     );
@@ -354,7 +372,7 @@ export const applyEufyApiCompatibility = (log: (message: string) => void): void 
             if (!reportedDeviceTypes.has(type)) {
                 reportedDeviceTypes.add(type);
                 log(
-                    `Device type ${type} is not known to eufy-security-client. The adapter treats it as type ${DEVICE_TYPE_SUBSTITUTES[type]} - see #156.`,
+                    `Device type ${type} is not known to eufy-security-client. The adapter treats it as type ${DEVICE_TYPE_SUBSTITUTES[type].type} - see #${DEVICE_TYPE_SUBSTITUTES[type].issue}.`,
                 );
             }
         }
