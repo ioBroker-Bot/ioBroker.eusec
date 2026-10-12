@@ -109,10 +109,16 @@
  * the C37 reports a param for every S4 property except `enabled` (6250), and the library treats the
  * S4 as a battery and an outdoor pan and tilt camera.
  *
- * Known limit: untested on a C37. Settings are sent the way the library sends them to an S4, which
- * for detection types is the SoloCam S340 route (`isOutdoorPanAndTiltCamera()`). The C37 also gets
- * the state for the second lens of the S4 (`dualCamWatchViewMode`). Its params for notification
- * types (6027), motion detection type (1252) and auto night vision (1013) have no state.
+ * Its owner confirms one lens, and livestream, motion detection, light, pan and tilt and the battery
+ * states working. The two S4 properties the C37 has no param for are dropped from its metadata, which
+ * the adapter creates its states from: the second lens (`dualCamWatchViewMode`) and `enabled`, which
+ * would show the default `true` forever. The device list keeps the model (`T814X`) after the type
+ * was replaced, so the model is what identifies a C37.
+ *
+ * Known limit: person and vehicle detection are unconfirmed. Settings are sent the way the library
+ * sends them to an S4, which for detection types is the SoloCam S340 route
+ * (`isOutdoorPanAndTiltCamera()`). Its params for notification types (6027), motion detection type
+ * (1252) and auto night vision (1013) have no state.
  *
  * ## 6. Kept P2P connection
  *
@@ -143,12 +149,21 @@
  * worked on the generic route before.
  */
 
-import { Device, DeviceType, HTTPApi, MegaHTTPApi, P2PClientProtocol, ResponseErrorCode } from 'eufy-security-client';
+import {
+    Device,
+    DeviceType,
+    HTTPApi,
+    MegaHTTPApi,
+    P2PClientProtocol,
+    PropertyName,
+    ResponseErrorCode,
+} from 'eufy-security-client';
 import type {
     ApiResponse,
     DeviceListResponse,
     EufySecurityConfig,
     HTTPApiRequest,
+    IndexedProperty,
     MegaResult,
     StationListResponse,
 } from 'eufy-security-client';
@@ -169,6 +184,11 @@ const DEVICE_TYPE_SUBSTITUTES: Readonly<Record<number, DeviceTypeSubstitute>> = 
     10031: { type: DeviceType.SOLO_CAMERA_SPOTLIGHT_1080, issue: 156 }, // eufyCam C31 (T817L)
     10037: { type: DeviceType.CAMERA_S4, issue: 198 }, // eufyCam C37 (T814X)
 };
+
+/** Properties of the substitute type that a device model has no param for, by model. */
+const PROPERTIES_WITHOUT_PARAM: ReadonlyMap<unknown, readonly string[]> = new Map([
+    ['T814X', [PropertyName.DeviceDualCamWatchViewMode, PropertyName.DeviceEnabled]], // eufyCam C37, #198
+]);
 
 /** An entry of a device or station list whose type was replaced, with the type it had before. */
 export interface SubstitutedEntry {
@@ -395,6 +415,19 @@ export const applyEufyApiCompatibility = (log: (message: string) => void): void 
         const stations = await originalGetStationList.call(this);
         reportSubstitutes(substituteDeviceTypes(stations));
         return stations;
+    };
+
+    // Drop the properties of the substitute type that the real model has no param for.
+    const originalGetPropertiesMetadata = Device.prototype.getPropertiesMetadata;
+
+    Device.prototype.getPropertiesMetadata = function (hidden?: boolean): IndexedProperty {
+        const metadata = originalGetPropertiesMetadata.call(this, hidden);
+        const model: unknown = (this.getRawDevice() as DeviceListResponse | undefined)?.device_model;
+        // The library returns a fresh object on every call, so deleting from it is safe.
+        for (const name of PROPERTIES_WITHOUT_PARAM.get(model) ?? []) {
+            delete metadata[name];
+        }
+        return metadata;
     };
 
     // 6. Keep the P2P connection of the configured battery devices open.

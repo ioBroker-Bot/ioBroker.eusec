@@ -10,6 +10,7 @@ import {
     P2PClientProtocol,
     ParamType,
     PresetPositionType,
+    PropertyName,
     Station,
 } from 'eufy-security-client';
 import type { DeviceListResponse, MegaResult, StationListResponse } from 'eufy-security-client';
@@ -265,6 +266,48 @@ describe('eufyApiCompat => applyEufyApiCompatibility', () => {
         expect(messages.filter(message => message.includes('Device type 10037')).length, 'logged once').to.equal(1);
         expect(messages.find(message => message.includes('Device type 10037'))).to.include('type 89 - see #198');
         expect(messages.filter(message => message.startsWith('Parameters of')).length, 'once per device').to.equal(2);
+    });
+
+    describe('properties of a substituted model', () => {
+        // The constructor needs a live session; the metadata only reads the raw device. A C37 connects
+        // to a HomeBase.
+        const device = (rawDevice: unknown): Device =>
+            Object.assign(Object.create(Device.prototype) as object, {
+                rawDevice: { station_sn: 'T8030P0000000000', ...(rawDevice as object) },
+            }) as unknown as Device;
+        const c37Only = [PropertyName.DeviceDualCamWatchViewMode, PropertyName.DeviceEnabled];
+
+        it('should drop the second lens and enabled from a C37', () => {
+            const c37 = device({ device_type: DeviceType.CAMERA_S4, device_model: 'T814X' });
+            for (const name of c37Only) {
+                expect(c37.hasProperty(name), name).to.equal(false);
+                expect(c37.hasProperty(name, true), `${name} hidden`).to.equal(false);
+            }
+            expect(c37.hasProperty(PropertyName.DeviceBattery), 'other S4 properties').to.equal(true);
+            expect(c37.hasProperty(PropertyName.DeviceMotionDetection)).to.equal(true);
+        });
+
+        it('should keep them for a real S4 and for other model spellings', () => {
+            for (const model of ['T8172', 't814x', 'T814X ', 'T814', '', undefined, null, 814]) {
+                const s4 = device({ device_type: DeviceType.CAMERA_S4, device_model: model });
+                for (const name of c37Only) {
+                    expect(s4.hasProperty(name), `${name} for ${String(model)}`).to.equal(true);
+                }
+            }
+        });
+
+        it('should not trip over a model named like an object member', () => {
+            for (const model of ['constructor', 'toString', '__proto__']) {
+                const s4 = device({ device_type: DeviceType.CAMERA_S4, device_model: model });
+                expect(s4.hasProperty(PropertyName.DeviceEnabled), model).to.equal(true);
+            }
+        });
+
+        it('should not take the properties from the library definition for later devices', () => {
+            device({ device_type: DeviceType.CAMERA_S4, device_model: 'T814X' }).getPropertiesMetadata();
+            const s4 = device({ device_type: DeviceType.CAMERA_S4, device_model: 'T8172' });
+            expect(s4.hasProperty(PropertyName.DeviceDualCamWatchViewMode)).to.equal(true);
+        });
     });
 
     describe('kept P2P connection', () => {
