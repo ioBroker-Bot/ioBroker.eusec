@@ -40,10 +40,11 @@ every mount are not what a tablet needs.
 
 ## Refreshing the copies
 
-After a major bump of `go2rtc-static`, take the files from the new binary:
+After a bump of `GO2RTC_VERSION` in `src/lib/go2rtcBinary.ts`, take the files from the new binary -
+the release asset for your machine, or the copy the adapter keeps in `iobroker-data/eusec.0/`:
 
 ```sh
-./node_modules/go2rtc-static/dist/go2rtc -config '{"api":{"listen":":19843"},"rtsp":{"listen":":18556"}}' &
+./go2rtc -config '{"api":{"listen":":19843"},"rtsp":{"listen":":18556"}}' &
 cd www
 for f in links.html webrtc.html log.html video-rtc.js video-stream.js; do
     curl -s "http://127.0.0.1:19843/$f" -o "$f"

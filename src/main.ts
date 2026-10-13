@@ -4,7 +4,7 @@
 
 // The adapter-core module gives you access to the core ioBroker functions
 // you need to create an adapter
-import { Adapter, type AdapterOptions } from '@iobroker/adapter-core';
+import { Adapter, type AdapterOptions, getAbsoluteInstanceDataDir } from '@iobroker/adapter-core';
 import * as path from 'node:path';
 import {
     type Camera,
@@ -81,6 +81,7 @@ import {
 } from './lib/quality';
 import { createVideoFilter, streamToGo2rtc } from './lib/video';
 import { OnDemandStreams, startUntilDelivered } from './lib/ondemand';
+import { GO2RTC_VERSION, provideGo2rtc } from './lib/go2rtcBinary';
 import { parseTalkbackSource, pipeToTalkback, talkbackFfmpegArgs, waitForDeviceEvent } from './lib/talkback';
 
 /** Restart backoff for go2rtc: 1s, 2s, 4s ... capped, reset once it stayed up for a while. */
@@ -110,6 +111,8 @@ export class euSec extends Adapter {
     };
     private captchaId: string | null = null;
     private verify_code = false;
+    /** The go2rtc binary - the pinned upstream release, or go2rtc-static if that cannot be had. */
+    private go2rtcPath: string | undefined = pathToGo2rtc ?? undefined;
     private go2rtcProcess: childProcess.ChildProcess | undefined = undefined;
     private go2rtcRestartTimeout: ioBroker.Timeout | undefined = undefined;
     private go2rtcRestarts = 0;
@@ -420,7 +423,25 @@ export class euSec extends Adapter {
 
             await this.eufy.connect();
 
-            if (pathToGo2rtc) {
+            this.go2rtcPath =
+                (await provideGo2rtc({
+                    dir: getAbsoluteInstanceDataDir(this),
+                    platform: process.platform,
+                    arch: process.arch,
+                    // "6" on a Raspberry Pi Zero or 1, a string in config.gypi.
+                    armVersion: (process.config.variables as { arm_version?: string }).arm_version,
+                    log: {
+                        info: message => this.logger.info(message),
+                        warn: message => this.logger.warn(message),
+                    },
+                })) ?? this.go2rtcPath;
+            if (this.go2rtcPath && this.go2rtcPath === pathToGo2rtc) {
+                this.logger.warn(
+                    `Using the bundled go2rtc 1.9.4 instead of ${GO2RTC_VERSION} - its compatibility streams can stop answering until the adapter is restarted`,
+                );
+            }
+
+            if (this.go2rtcPath) {
                 const go2rtcConfig: {
                     [index: string]: {
                         [index: string]: string | string[] | number | null;
@@ -513,12 +534,12 @@ export class euSec extends Adapter {
      * @param go2rtcConfig The serialized go2rtc configuration
      */
     private startGo2rtc(go2rtcConfig: string): void {
-        if (!pathToGo2rtc || this.terminating) {
+        if (!this.go2rtcPath || this.terminating) {
             return;
         }
 
         const startedAt = Date.now();
-        const go2rtc = childProcess.spawn(pathToGo2rtc, ['-config', go2rtcConfig], {
+        const go2rtc = childProcess.spawn(this.go2rtcPath, ['-config', go2rtcConfig], {
             shell: false,
             detached: false,
             windowsHide: true,
@@ -798,7 +819,7 @@ export class euSec extends Adapter {
                 language: this.language ?? 'en',
                 onDemand: this.onDemand !== undefined,
                 hostnameAuto: this.hostnameAuto,
-                noGo2rtc: !pathToGo2rtc,
+                noGo2rtc: !this.go2rtcPath,
             });
             if (obj.callback) {
                 this.sendTo(obj.from, obj.command, result, obj.callback);
